@@ -127,7 +127,7 @@ resource "azurerm_api_management_api" "products_api" {
   resource_group_name = azurerm_resource_group.apim.name
   api_management_name = azurerm_api_management.core_apim.name
   revision            = "1"
-  path                = "products-service"
+  path                = "func-app-product-service"
 
   display_name = "Products Service API"
 
@@ -141,7 +141,7 @@ data "azurerm_function_app_host_keys" "products_keys" {
 }
 
 resource "azurerm_api_management_backend" "products_fa" {
-  name                = "products-service-backend"
+  name                = "products-service-backend-vv"
   resource_group_name = azurerm_resource_group.apim.name
   api_management_name = azurerm_api_management.core_apim.name
   protocol            = "http"
@@ -197,7 +197,7 @@ resource "azurerm_api_management_api_operation" "get_products" {
   api_management_name = azurerm_api_management.core_apim.name
   display_name        = "Get Products"
   method              = "GET"
-  operation_id        = "get-products"
+  operation_id        = "http-get-product-list"
   url_template        = "/products"
 }
 
@@ -207,7 +207,7 @@ resource "azurerm_api_management_api_operation" "get_product_by_id" {
   api_management_name = azurerm_api_management.core_apim.name
   display_name        = "Get Product by ID"
   method              = "GET"
-  operation_id        = "get-product-by-id"
+  operation_id        = "http-get-product-by-id"
   url_template        = "/products/{productId}"
 
   template_parameter {

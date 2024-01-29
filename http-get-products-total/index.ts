@@ -3,8 +3,12 @@ import { ProductService } from "../services/productsService";
 
 const httpTrigger: AzureFunction = async function (context: Context, req: HttpRequest): Promise<void> {
     context.log(`HTTP trigger function processed a request. request: ${req}`);
+
+    const products = await ProductService.getAll()
     context.res = {
-        body: await ProductService.getAll()
+        body: {
+            tatalProducts: products.length
+        }
     };
 
 };

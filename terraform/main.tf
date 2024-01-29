@@ -141,7 +141,7 @@ data "azurerm_function_app_host_keys" "products_keys" {
 }
 
 resource "azurerm_api_management_backend" "products_fa" {
-  name                = "products-service-backend-vv"
+  name                = "products-service-backend-volodko-003"
   resource_group_name = azurerm_resource_group.apim.name
   api_management_name = azurerm_api_management.core_apim.name
   protocol            = "http"
@@ -167,15 +167,19 @@ resource "azurerm_api_management_api_policy" "api_policy" {
  <policies>
  	<inbound>
  		<set-backend-service backend-id="${azurerm_api_management_backend.products_fa.name}"/>
- 		<base/>    
     <cors allow-credentials="false">
       <allowed-origins>
         <origin>*</origin>
       </allowed-origins>
-      <allowed-methods>
-        <method>GET</method>
-        <method>POST</method>
+      <allowed-methods preflight-result-max-age="300">
+        <method>*</method>
       </allowed-methods>
+      <allowed-headers>
+        <header>*</header>
+      </allowed-headers>
+      <expose-headers>
+        <header>*</header>
+      </expose-headers>
     </cors>
  	</inbound>
  	<backend>
@@ -214,5 +218,90 @@ resource "azurerm_api_management_api_operation" "get_product_by_id" {
     name     = "productId"
     required = true
     type     = "string"
+  }
+}
+
+resource "azurerm_api_management_api_operation" "get_products_total" {
+  resource_group_name = azurerm_resource_group.apim.name
+  api_name            = azurerm_api_management_api.products_api.name
+  api_management_name = azurerm_api_management.core_apim.name
+  display_name        = "Get Products Total"
+  method              = "GET"
+  operation_id        = "http-get-product-total"
+  url_template        = "/products/total"
+}
+
+resource "azurerm_api_management_api_operation" "post_product" {
+  resource_group_name = azurerm_resource_group.apim.name
+  api_name            = azurerm_api_management_api.products_api.name
+  api_management_name = azurerm_api_management.core_apim.name
+  display_name        = "Post Product"
+  method              = "PUT"
+  operation_id        = "http-post-product"
+  url_template        = "/products"
+}
+
+resource "azurerm_cosmosdb_account" "test_app" {
+  location            = "northeurope"
+  name                = "cosmos-test-app-volodko"
+  offer_type          = "Standard"
+  resource_group_name = azurerm_resource_group.product_service_rg.name
+  kind                = "GlobalDocumentDB"
+
+  consistency_policy {
+    consistency_level = "Eventual"
+  }
+
+  capabilities {
+    name = "EnableServerless"
+  }
+
+  geo_location {
+    failover_priority = 0
+    location          = "North Europe"
+  }
+}
+
+resource "azurerm_cosmosdb_sql_database" "products_app" {
+  account_name        = azurerm_cosmosdb_account.test_app.name
+  name                = "products-db"
+  resource_group_name = azurerm_resource_group.product_service_rg.name
+}
+
+resource "azurerm_cosmosdb_sql_container" "products" {
+  account_name        = azurerm_cosmosdb_account.test_app.name
+  database_name       = azurerm_cosmosdb_sql_database.products_app.name
+  name                = "products"
+  partition_key_path  = "/id"
+  resource_group_name = azurerm_resource_group.product_service_rg.name
+
+  # Cosmos DB supports TTL for the records
+  default_ttl = -1
+
+  indexing_policy {
+    excluded_path {
+      path = "/*"
+    }
+  }
+}
+
+resource "azurerm_cosmosdb_sql_container" "stocks" {
+  account_name        = azurerm_cosmosdb_account.test_app.name
+  resource_group_name = azurerm_resource_group.product_service_rg.name
+  database_name       = azurerm_cosmosdb_sql_database.products_app.name
+  name                = "stocks"
+  partition_key_path  = "/product_id"
+
+  # Cosmos DB supports TTL for the records
+  default_ttl = -1
+
+  indexing_policy {
+    included_path {
+      path = "/product_id/?"
+    }
+
+    excluded_path {
+      path = "/*"
+    }
   }
 }

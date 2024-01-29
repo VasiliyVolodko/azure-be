@@ -6,9 +6,10 @@
       "direction": "in",
       "name": "req",
       "methods": [
-        "get"
+        "post",
+        "put"
       ],
-      "route": "products/{productId:guid}"
+      "route": "products"
     },
     {
       "type": "http",
@@ -16,5 +17,5 @@
       "name": "res"
     }
   ],
-  "scriptFile": "../dist/http-get-product-by-id/index.js"
+  "scriptFile": "../dist/http-post-products/index.js"
 }

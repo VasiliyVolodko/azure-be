@@ -1,24 +1,29 @@
 import { AzureFunction, Context, HttpRequest } from "@azure/functions"
 import { ProductService } from "../services/productsService";
+import { z } from "zod"
 
+const productSchema = z.object({
+    title: z.string(),
+    description: z.string(),
+    price: z.number()
+})
 const httpTrigger: AzureFunction = async function (context: Context, req: HttpRequest): Promise<void> {
     context.log(`HTTP trigger function processed a request. request: ${req}`);
 
-    const { params: { productId } } = req
-    const productResponse = await ProductService.getById(productId)
+    const validation = productSchema.safeParse(req.body)
 
-    if (productResponse) {
+    if (validation.success) {
+        await ProductService.createProduct(req.body)
+
         context.res = {
-            body: productResponse
+            body: 'ok'
         };
     } else {
         context.res = {
-            status: 404,
-            body: "Product not found"
+            status: 400,
+            body: 'incorrect data'
         };
     }
-    
-
 };
 
 export default httpTrigger;

@@ -3,7 +3,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.0.2"
+      version = "~> 3.89.0"
     }
   }
 
@@ -304,4 +304,200 @@ resource "azurerm_cosmosdb_sql_container" "stocks" {
       path = "/*"
     }
   }
+}
+
+resource "azurerm_resource_group" "import_service_rg" {
+  name     = "rg-import-service-sand-ne-vol"
+  location = "northeurope"
+}
+
+resource "azurerm_storage_account" "import_service_files" {
+  name     = "volodkoimportfiles001"
+  location = "northeurope"
+
+  account_replication_type = "LRS"
+  account_tier             = "Standard"
+  account_kind             = "StorageV2"
+
+  blob_properties {
+    cors_rule {
+      allowed_headers    = ["*"]
+      allowed_methods    = ["PUT", "GET"]
+      allowed_origins    = ["*"]
+      exposed_headers    = ["*"]
+      max_age_in_seconds = 0
+    }
+  }
+
+  resource_group_name = azurerm_resource_group.import_service_rg.name
+}
+
+
+resource "azurerm_storage_container" "uploaded_container" {
+  name                  = "uploaded"
+  storage_account_name  = azurerm_storage_account.import_service_files.name
+  container_access_type = "blob"
+}
+
+resource "azurerm_storage_container" "parsed_container" {
+  name                  = "parsed"
+  storage_account_name  = azurerm_storage_account.import_service_files.name
+  container_access_type = "blob"
+}
+
+resource "azurerm_storage_share" "import_service_fa" {
+  name  = "fa-import-service-dev-voldk-share"
+  quota = 2
+
+  storage_account_name = azurerm_storage_account.import_service_files.name
+}
+
+resource "azurerm_service_plan" "import_service_plan" {
+  name                = "asp-import-service-sand-ne-py-vol"
+  resource_group_name = azurerm_resource_group.import_service_rg.name
+  location            = azurerm_resource_group.import_service_rg.location
+
+  os_type  = "Windows"
+  sku_name = "Y1"
+}
+
+resource "azurerm_application_insights" "import_service_fa" {
+  name                = "appins-fa-import-service-sand-ne-vol"
+  resource_group_name = azurerm_resource_group.import_service_rg.name
+  location            = azurerm_resource_group.import_service_rg.location
+  application_type    = "web"
+}
+
+resource "azurerm_windows_function_app" "import_service" {
+  name                = "fa-import-service-ne-vol"
+  resource_group_name = azurerm_resource_group.import_service_rg.name
+  location            = azurerm_resource_group.import_service_rg.location
+
+  service_plan_id = azurerm_service_plan.import_service_plan.id
+
+  storage_account_name       = azurerm_storage_account.import_service_files.name
+  storage_account_access_key = azurerm_storage_account.import_service_files.primary_access_key
+
+  functions_extension_version = "~4"
+  builtin_logging_enabled     = false
+
+  site_config {
+    always_on = false
+
+    application_insights_key               = azurerm_application_insights.import_service_fa.instrumentation_key
+    application_insights_connection_string = azurerm_application_insights.import_service_fa.connection_string
+
+    # For production systems set this to false
+    use_32_bit_worker = true
+
+    # Enable function invocations from Azure Portal.
+    cors {
+      allowed_origins = ["https://portal.azure.com"]
+    }
+
+    application_stack {
+      node_version = "~16"
+    }
+  }
+
+  app_settings = {
+    WEBSITE_CONTENTAZUREFILECONNECTIONSTRING = azurerm_storage_account.import_service_files.primary_connection_string
+    WEBSITE_CONTENTSHARE                     = azurerm_storage_share.import_service_fa.name
+    STORAGE_UPLOAD_CONTAINER                 = azurerm_storage_container.uploaded_container.name
+    STORAGE_PARSED_CONTAINER                 = azurerm_storage_container.parsed_container.name
+  }
+
+  # The app settings changes cause downtime on the Function App. e.g. with Azure Function App Slots
+  # Therefore it is better to ignore those changes and manage app settings separately off the Terraform.
+  lifecycle {
+    ignore_changes = [
+      app_settings,
+      tags["hidden-link: /app-insights-instrumentation-key"],
+      tags["hidden-link: /app-insights-resource-id"],
+      tags["hidden-link: /app-insights-conn-string"]
+    ]
+  }
+}
+
+resource "azurerm_api_management_api" "import_api" {
+  name                = "import-service-api-vol"
+  resource_group_name = azurerm_resource_group.apim.name
+  api_management_name = azurerm_api_management.core_apim.name
+  revision            = "1"
+  path                = "import-service"
+
+  display_name = "Import Service API"
+
+  protocols             = ["https"]
+  subscription_required = false
+}
+
+data "azurerm_function_app_host_keys" "import_keys" {
+  name                = azurerm_windows_function_app.import_service.name
+  resource_group_name = azurerm_resource_group.import_service_rg.name
+}
+
+resource "azurerm_api_management_backend" "import_fa" {
+  name                = "import-service-backend-vol"
+  resource_group_name = azurerm_resource_group.apim.name
+  api_management_name = azurerm_api_management.core_apim.name
+  protocol            = "http"
+  url                 = "https://${azurerm_windows_function_app.import_service.name}.azurewebsites.net/api"
+  description         = "Import API"
+
+  credentials {
+    certificate = []
+    query       = {}
+
+    header = {
+      "x-functions-key" = data.azurerm_function_app_host_keys.import_keys.default_function_key
+    }
+  }
+}
+
+resource "azurerm_api_management_api_policy" "import_api_policy" {
+  resource_group_name = azurerm_resource_group.apim.name
+  api_name            = azurerm_api_management_api.import_api.name
+  api_management_name = azurerm_api_management.core_apim.name
+
+  xml_content = <<XML
+ <policies>
+ 	<inbound>
+ 		<set-backend-service backend-id="${azurerm_api_management_backend.import_fa.name}"/>
+    <cors allow-credentials="false">
+      <allowed-origins>
+        <origin>*</origin>
+      </allowed-origins>
+      <allowed-methods preflight-result-max-age="300">
+        <method>*</method>
+      </allowed-methods>
+      <allowed-headers>
+        <header>*</header>
+      </allowed-headers>
+      <expose-headers>
+        <header>*</header>
+      </expose-headers>
+    </cors>
+ 	</inbound>
+ 	<backend>
+ 		<base/>
+ 	</backend>
+ 	<outbound>
+ 		<base/>
+ 	</outbound>
+ 	<on-error>
+ 		<base/>
+ 	</on-error>
+ </policies>
+XML
+}
+
+resource "azurerm_api_management_api_operation" "import_csv" {
+  resource_group_name = azurerm_resource_group.apim.name
+  api_name            = azurerm_api_management_api.import_api.name
+  api_management_name = azurerm_api_management.core_apim.name
+  display_name        = "Import CSV file"
+  method              = "GET"
+  operation_id        = "get-import-url"
+  url_template        = "/import"
 }

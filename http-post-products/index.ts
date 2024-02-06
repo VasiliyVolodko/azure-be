@@ -1,16 +1,11 @@
 import { AzureFunction, Context, HttpRequest } from "@azure/functions"
 import { ProductService } from "../services/productsService";
-import { z } from "zod"
+import { productPutSchema } from "../schemas/product.schema";
 
-const productSchema = z.object({
-    title: z.string(),
-    description: z.string(),
-    price: z.number()
-})
 const httpTrigger: AzureFunction = async function (context: Context, req: HttpRequest): Promise<void> {
     context.log(`HTTP trigger function processed a request. request: ${req}`);
 
-    const validation = productSchema.safeParse(req.body)
+    const validation = productPutSchema.safeParse(req.body)
 
     if (validation.success) {
         await ProductService.createProduct(req.body)

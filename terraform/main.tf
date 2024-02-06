@@ -92,6 +92,13 @@ resource "azurerm_windows_function_app" "products_service" {
   app_settings = {
     WEBSITE_CONTENTAZUREFILECONNECTIONSTRING = azurerm_storage_account.products_service_fa.primary_connection_string
     WEBSITE_CONTENTSHARE                     = azurerm_storage_share.products_service_fa.name
+    AzureWebJobsMyServiceBus                 = azurerm_servicebus_namespace_authorization_rule.service-rule-vldk.primary_connection_string
+    SERVICE_BUS_CONNECTION_STRING            = azurerm_servicebus_namespace_authorization_rule.service-rule-vldk.primary_connection_string
+    COSMOSDB_PRIMARY_KEY                     = azurerm_cosmosdb_account.test_app.primary_key
+    COSMOSDB_ENDPOINT                        = azurerm_cosmosdb_account.test_app.endpoint
+    COSMOSDB_NAME                            = azurerm_cosmosdb_sql_database.products_app.name
+    COSMOSDB_PRODUCTS_CONTAINER_NAME         = azurerm_cosmosdb_sql_container.products.name
+    COSMOSDB_STOCKS_CONTAINER_NAME           = azurerm_cosmosdb_sql_container.stocks.name
   }
 
   # The app settings changes cause downtime on the Function App. e.g. with Azure Function App Slots
@@ -405,6 +412,8 @@ resource "azurerm_windows_function_app" "import_service" {
     WEBSITE_CONTENTSHARE                     = azurerm_storage_share.import_service_fa.name
     STORAGE_UPLOAD_CONTAINER                 = azurerm_storage_container.uploaded_container.name
     STORAGE_PARSED_CONTAINER                 = azurerm_storage_container.parsed_container.name
+    SERVICE_BUS_CONNECTION_STRING            = azurerm_servicebus_namespace_authorization_rule.service-rule-vldk.primary_connection_string
+    QUEUE_NAME                               = azurerm_servicebus_queue.service_bus_queue_vldk.name
   }
 
   # The app settings changes cause downtime on the Function App. e.g. with Azure Function App Slots
@@ -500,4 +509,39 @@ resource "azurerm_api_management_api_operation" "import_csv" {
   method              = "GET"
   operation_id        = "get-import-url"
   url_template        = "/import"
+}
+
+resource "azurerm_resource_group" "service_bus_queue_vldk" {
+  name     = "service_bus_queue_vldk"
+  location = "northeurope"
+}
+
+resource "azurerm_servicebus_namespace" "service_bus_vldk" {
+  name                          = "servicebus-vldk"
+  location                      = azurerm_resource_group.service_bus_queue_vldk.location
+  resource_group_name           = azurerm_resource_group.service_bus_queue_vldk.name
+  sku                           = "Basic"
+  capacity                      = 0 /* standard for sku plan */
+  public_network_access_enabled = true /* can be changed to false for premium */
+  minimum_tls_version           = "1.2"
+  zone_redundant                = false /* can be changed to true for premium */
+}
+
+resource "azurerm_servicebus_namespace_authorization_rule" "service-rule-vldk" {
+  name         = "service-rule-vldk"
+  namespace_id = azurerm_servicebus_namespace.service_bus_vldk.id
+
+  listen = true
+  send   = true
+  manage = false
+}
+
+resource "azurerm_servicebus_queue" "service_bus_queue_vldk" {
+  name                                    = "servicebus-queue-vldk"
+  namespace_id                            = azurerm_servicebus_namespace.service_bus_vldk.id
+  lock_duration                           = "PT1M" /* ISO 8601 timespan duration, 5 min is max */
+  requires_duplicate_detection            = false
+  duplicate_detection_history_time_window = "PT10M" /* ISO 8601 timespan duration, 5 min is max */
+  requires_session                        = false
+  dead_lettering_on_message_expiration    = false
 }

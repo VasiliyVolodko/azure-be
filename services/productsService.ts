@@ -1,5 +1,5 @@
-import { productContainer } from "../db/containers";
 import { StockService } from "./stocksService";
+import { productContainer } from "./db";
 
 interface IProduct {
   title: string,
@@ -12,6 +12,8 @@ interface IStock {
   productId: string,
   count: number
 }
+
+
 
 export class ProductService {
   static async getAll(): Promise<(IProduct & Omit<IStock, 'productId'>)[]> {
@@ -44,8 +46,8 @@ export class ProductService {
     }
   }
 
-  static async createProduct(product: IProduct): Promise<void> {
+  static async createProduct(product: IProduct & Partial<Omit<IStock, 'productId'>>): Promise<void> {
     const { item: { id } } = await productContainer.items.upsert(product);
-    await StockService.createStock(id)
+    await StockService.createStock(id, product.count)
   }
 }

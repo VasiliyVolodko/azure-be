@@ -1,5 +1,5 @@
-import { productContainer } from "../db/containers";
-import { stockContainer } from "../db/containers";
+import { stockContainer } from "./db";
+
 
 interface IProduct {
   title: string,
@@ -31,11 +31,10 @@ export class StockService {
     }
   }
 
-  static async createStock(id: string): Promise<void> {
+  static async createStock(id: string, count: number = 0): Promise<void> {
     const res = await stockContainer.items.upsert({
       productId: id,
-      count: 0
+      count
     });
-    console.log(res)
   }
 }
